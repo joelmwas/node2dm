@@ -388,7 +388,7 @@ function C2DMConnection(config) {
         });
 
     });
-    this.debugServer.listen(config.debugServerPort || 8121);
+    this.debugServer.listen(config.debugServerPort || config.port + 100);
 }
 
 util.inherits(C2DMConnection, emitter);
