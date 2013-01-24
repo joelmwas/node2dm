@@ -53,7 +53,10 @@ function C2DMReceiver(config, connection) {
         var collapseKey = msgParts[2];
         var notification = msgParts[3];
 
-        var c2dmMessage = new C2DMMessage(token, collapseKey, notification);
+        var c2dmMessage = {}
+        c2dmMessage.token = token;
+        c2dmMessage.collapseKey = collapseKey;
+        c2dmMessage.notification = notification;
         connection.notifyDevice(c2dmMessage);
     });
     this.server.bind(config.port || 8120);
