@@ -54,7 +54,7 @@ function C2DMReceiver(config, connection) {
         var notification = msgParts[3];
 
         var c2dmMessage = {}
-        c2dmMessage.token = token;
+        c2dmMessage.deviceToken = token;
         c2dmMessage.collapseKey = collapseKey;
         c2dmMessage.notification = notification;
         connection.notifyDevice(c2dmMessage);
