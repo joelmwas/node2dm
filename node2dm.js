@@ -40,9 +40,11 @@ function C2DMReceiver(config, connection) {
 
     this.pattern = new RegExp(/^([^:]+):([^:]+):(.*)$/);
 
+    var self = this;
+
     this.server = dgram.createSocket('udp4', function (msg, rinfo) {
 
-        var msgParts = this.pattern.exec(msg.toString());
+        var msgParts = self.pattern.exec(msg.toString());
         if (!msgParts) {
             log("Invalid message");
             return;
