@@ -201,6 +201,14 @@ function C2DMConnection(config) {
                 log("ERROR: message too big");
                 break;
 
+            case "MissingRegistration":
+                log("ERROR: MissingRegistration");
+                break;
+
+            default:
+                log("ERROR: Unknown Google Error: " + googleError);
+                break;
+
         }
 
     }
