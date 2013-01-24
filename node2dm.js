@@ -30,7 +30,7 @@ function log(msg) {
     if (config.syslog) {
         syslog.log(syslog.LOG_INFO, msg);
     } else {
-        util.log(msg);
+        util.log('[' + config.port + '] ' + msg);
     }
 }
 
