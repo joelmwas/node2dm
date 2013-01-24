@@ -34,17 +34,15 @@ function log(msg) {
     }
 }
 
-function C2DMMessage(deviceToken, collapseKey, notification) {
-    this.deviceToken = deviceToken;
-    this.collapseKey = collapseKey;
-    this.notification = notification;
-}
+
 
 function C2DMReceiver(config, connection) {
 
+    this.pattern = new RegExp(/^([^:]+):([^:]+):(.*)$/);
+
     this.server = dgram.createSocket('udp4', function (msg, rinfo) {
 
-        var msgParts = msg.toString().match(/^([^:]+):([^:]+):(.*)$/);
+        var msgParts = this.pattern.exec(msg.toString());
         if (!msgParts) {
             log("Invalid message");
             return;
