@@ -233,6 +233,7 @@ function C2DMConnection(config) {
         var requestOptions =  {
             'host': self.c2dmServerOptions.host,
             'path': self.c2dmServerOptions.path,
+            'agent': false,
             'method': 'POST',
             'headers': {
                 'Content-Length': stringBody.length,
