@@ -30,21 +30,21 @@ function log(msg) {
     if (config.syslog) {
         syslog.log(syslog.LOG_INFO, msg);
     } else {
-        util.log(msg);
+        util.log('[' + config.port + '] ' + msg);
     }
 }
 
-function C2DMMessage(deviceToken, collapseKey, notification) {
-    this.deviceToken = deviceToken;
-    this.collapseKey = collapseKey;
-    this.notification = notification;
-}
+
 
 function C2DMReceiver(config, connection) {
 
+    this.pattern = new RegExp(/^([^:]+):([^:]+):(.*)$/);
+
+    var self = this;
+
     this.server = dgram.createSocket('udp4', function (msg, rinfo) {
 
-        var msgParts = msg.toString().match(/^([^:]+):([^:]+):(.*)$/);
+        var msgParts = self.pattern.exec(msg.toString());
         if (!msgParts) {
             log("Invalid message");
             return;
@@ -53,7 +53,10 @@ function C2DMReceiver(config, connection) {
         var collapseKey = msgParts[2];
         var notification = msgParts[3];
 
-        var c2dmMessage = new C2DMMessage(token, collapseKey, notification);
+        var c2dmMessage = {}
+        c2dmMessage.deviceToken = token;
+        c2dmMessage.collapseKey = collapseKey;
+        c2dmMessage.notification = notification;
         connection.notifyDevice(c2dmMessage);
     });
     this.server.bind(config.port || 8120);
@@ -198,6 +201,14 @@ function C2DMConnection(config) {
                 log("ERROR: message too big");
                 break;
 
+            case "MissingRegistration":
+                log("ERROR: MissingRegistration");
+                break;
+
+            default:
+                log("ERROR: Unknown Google Error: " + googleError);
+                break;
+
         }
 
     }
@@ -222,6 +233,7 @@ function C2DMConnection(config) {
         var requestOptions =  {
             'host': self.c2dmServerOptions.host,
             'path': self.c2dmServerOptions.path,
+            'agent': false,
             'method': 'POST',
             'headers': {
                 'Content-Length': stringBody.length,
