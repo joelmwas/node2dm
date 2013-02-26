@@ -26,10 +26,11 @@ if (config.statsD) {
         var host = config.statsD.host || "127.0.0.1";
         var port = config.statsD.port || 8125;
         var prefix = config.statsD.prefix || "";
-        var client = new StatsD(host, port, prefix);
+        var suffix = config.statsD.suffix || "";
+        var client = new StatsD(host, port, prefix, suffix);
     } catch (e) {
         config.statsD = false;
-        log('node-statsd is required for statsd support.');
+        log('node-statsd >= 0.0.4 is required for statsd support.');
     }
 }
 
@@ -49,7 +50,7 @@ function log(msg) {
 
 function write_stat(stat) {
     if (config.statsD) {
-        client.increment(stat, 1, config.statsD.sampling);
+        client.increment(stat, 1, config.statsD.samplingRate);
     } else {
         return;
     }
