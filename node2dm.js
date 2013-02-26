@@ -31,6 +31,7 @@ if (config.statsD) {
         config.statsD = false;
         log('node-statsd is required for statsd support.');
     }
+}
 
 function userConfig() {
   return process.argv[2] ?
