@@ -20,6 +20,20 @@ if (config.syslog) {
     }
 }
 
+if (config.statsD) {
+    try {
+        var StatsD = require('node-statsd').StatsD;
+        var host = config.statsD.host || "127.0.0.1";
+        var port = config.statsD.port || 8125;
+        var prefix = config.statsD.prefix || "";
+        var suffix = config.statsD.suffix || "";
+        var client = new StatsD(host, port, prefix, suffix);
+    } catch (e) {
+        config.statsD = false;
+        log('node-statsd >= 0.0.4 is required for statsd support.');
+    }
+}
+
 function userConfig() {
   return process.argv[2] ?
            process.argv[2].replace(/.js$/, '') :
@@ -34,7 +48,11 @@ function log(msg) {
     }
 }
 
-
+function writeStat(stat) {
+    if (config.statsD) {
+        client.increment(stat, 1, config.statsD.samplingRate);
+    }
+}
 
 function C2DMReceiver(config, connection) {
 
@@ -170,11 +188,13 @@ function C2DMConnection(config) {
         var errMessage = err.match(/Error=(.+)$/);
         if (!errMessage) {
             log("Unknown error: " + err);
+            writeStat("unknown_error");
         }
         var googleError = errMessage[1];
         switch (googleError) {
             case "QuotaExceeded":
                 log("WARNING: Google Quota Exceeded");
+                writeStat("quota_exceeded");
                 // write a lock file; will require manual intervention
                 fs.open('./quota.lock', 'w', '0666', function(e, id) {
                     fs.write(id, 'locked at ' + new Date().toString(), null, 'utf8', function() {
@@ -186,27 +206,33 @@ function C2DMConnection(config) {
                 break;
 
             case "DeviceQuotaExceeded":
+                writeStat("device_quota_exceeded");
                 self.rateLimitedTokens[message.deviceToken] = true;
                 break;
 
             case "InvalidRegistration":
+                writeStat("invalid_registration");
                 self.emit("badregistration", message);
                 break;
 
             case "NotRegistered":
+                writeStat("not_registered");
                 self.emit("badregistration", message);
                 break;
 
             case "MessageTooBig":
+                writeStat("message_too_big");
                 log("ERROR: message too big");
                 break;
 
             case "MissingRegistration":
+                writeStat("missing_registration");
                 log("ERROR: MissingRegistration");
                 break;
 
             default:
                 log("ERROR: Unknown Google Error: " + googleError);
+                writeStat("unknown_google_error");
                 break;
 
         }
@@ -263,6 +289,7 @@ function C2DMConnection(config) {
                     buffer += chunk;
                 });
                 response.on('end', function(end) {
+                    writeStat("success");
                     var returnedID = buffer.match(/id=/);
                     if (!returnedID) {
                         self.onError(message, buffer);
@@ -274,6 +301,7 @@ function C2DMConnection(config) {
         postRequest.on('error', function(error) {
             totalErrors++;
             log(error);
+            writeStat("failure");
         });
 
         postRequest.write(stringBody);
@@ -283,8 +311,10 @@ function C2DMConnection(config) {
     this.submitMessage = function(message) {
         if (self.currentAuthorizationToken) {
             self.sendRequest(message);
+            writeStat("sent");
         } else {
             self.requeueMessage(message);
+            writeStat("requeued");
         }
     }
 
