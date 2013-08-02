@@ -195,14 +195,6 @@ function C2DMConnection(config) {
             case "QuotaExceeded":
                 log("WARNING: Google Quota Exceeded");
                 writeStat("quota_exceeded");
-                // write a lock file; will require manual intervention
-                fs.open('./quota.lock', 'w', '0666', function(e, id) {
-                    fs.write(id, 'locked at ' + new Date().toString(), null, 'utf8', function() {
-                        fs.close(id, function() {
-                            process.exit(1);
-                        });
-                    });
-                });
                 break;
 
             case "DeviceQuotaExceeded":
