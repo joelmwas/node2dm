@@ -57,8 +57,8 @@ function writeStat(stat) {
 
 function C2DMReceiver(config, c2dmConnection, gcmConnection) {
 
-    this.pattern = new RegExp(/^([^:]+):([^:]+):(.*)$/);
-    this.GCMTokenPrefix = new RegExp(/^g\|(.*)$/);
+    this.pattern = /^([^:]+):([^:]+):(.*)$/;
+    this.GCMTokenPrefix = /^g\|(.*)$/;
 
     var self = this;
 
@@ -83,9 +83,11 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
         c2dmMessage.collapseKey = collapseKey;
         c2dmMessage.notification = notification;
         if (isGCMPayload && !gcmConnection) {
+            writeStat("gcm.no_gcm_server");
             log("Can't send GCM message, no connection");
             return;
         } else if (!isGCMPayload && !c2dmConnection) {
+            writeStat("gcm.no_c2dm_server");
             log("Can't send c2dm message, no connection");
             return;
         }
@@ -111,7 +113,7 @@ function GCMConnection(config) {
      */
     var totalMessages = 0;
     var totalErrors = 0;
-    var startupTime = Math.round(new Date().getTime() / 1000);
+    var startupTime = Math.round(Date.now() / 1000);
 
     this.notifyDevice = function(pushData) {
         var message = new gcm.Message({
@@ -121,9 +123,11 @@ function GCMConnection(config) {
             }
         });
 
+        writeStat("gcm.sent");
         totalMessages++;
         self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
             if (err) {
+                writeStat("gcm.error");
                 totalErrors++;
                 log(err);
             }
@@ -142,7 +146,7 @@ function GCMConnection(config) {
                     break;
 
                 case "stats":
-                    var now = Math.round(new Date().getTime() / 1000);
+                    var now = Math.round(Date.now() / 1000);
                     var elapsed = now - startupTime;
 
                     stream.write("uptime: " + elapsed + " seconds\n");
