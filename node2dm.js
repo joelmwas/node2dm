@@ -8,6 +8,7 @@ var dgram = require('dgram')
   , emitter = require('events').EventEmitter
   , config = require(userConfig())
   , fs = require('fs')
+  , gcm = require('node-gcm')
   , net = require('net')
 
 if (config.syslog) {
@@ -54,20 +55,26 @@ function writeStat(stat) {
     }
 }
 
-function C2DMReceiver(config, connection) {
+function C2DMReceiver(config, c2dmConnection, gcmConnection) {
 
     this.pattern = new RegExp(/^([^:]+):([^:]+):(.*)$/);
+    this.GCMTokenPrefix = new RegExp(/^g\|(.*)$/);
 
     var self = this;
 
     this.server = dgram.createSocket('udp4', function (msg, rinfo) {
-
         var msgParts = self.pattern.exec(msg.toString());
         if (!msgParts) {
             log("Invalid message");
             return;
         };
         var token = msgParts[1];
+        var tokenParts = self.GCMTokenPrefix.exec(token);
+        var isGCMPayload = false;
+        if (tokenParts) {
+            isGCMPayload = true;
+            token = tokenParts[1];
+        }
         var collapseKey = msgParts[2];
         var notification = msgParts[3];
 
@@ -75,11 +82,94 @@ function C2DMReceiver(config, connection) {
         c2dmMessage.deviceToken = token;
         c2dmMessage.collapseKey = collapseKey;
         c2dmMessage.notification = notification;
-        connection.notifyDevice(c2dmMessage);
+        if (isGCMPayload && !gcmConnection) {
+            log("Can't send GCM message, no connection");
+            return;
+        } else if (!isGCMPayload && !c2dmConnection) {
+            log("Can't send c2dm message, no connection");
+            return;
+        }
+        isGCMPayload ? gcmConnection.notifyDevice(c2dmMessage) :
+            connection.notifyDevice(c2dmMessage);
     });
     this.server.bind(config.port || 8120);
     log("server is up");
 }
+
+
+function GCMConnection(config) {
+
+    if (!config.gcmAPIKey) {
+        return null;
+    }
+
+    this.sender = new gcm.Sender(config.gcmAPIKey);
+    var self = this;
+
+    /*
+     * Stats
+     */
+    var totalMessages = 0;
+    var totalErrors = 0;
+    var startupTime = Math.round(new Date().getTime() / 1000);
+
+    this.notifyDevice = function(pushData) {
+        var message = new gcm.Message({
+            collapseKey: pushData.collapseKey,
+            data: {
+                data: pushData.notification
+            }
+        });
+
+        totalMessages++;
+        self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
+            if (err) {
+                totalErrors++;
+                log(err);
+            }
+        });
+    }
+
+    this.debugServer = net.createServer(function(stream) {
+        stream.setEncoding('ascii');
+
+        stream.on('data', function(data) {
+            var commandLine = data.trim().split(" ");
+            var command = commandLine.shift();
+            switch (command) {
+                case "help":
+                    stream.write("Commands: stats\n");
+                    break;
+
+                case "stats":
+                    var now = Math.round(new Date().getTime() / 1000);
+                    var elapsed = now - startupTime;
+
+                    stream.write("uptime: " + elapsed + " seconds\n");
+                    stream.write("messages_sent: " + totalMessages + "\n");
+                    stream.write("total_errors: " + totalErrors + "\n");
+
+                    var memoryUsage = process.memoryUsage();
+                    for (var property in memoryUsage) {
+                        stream.write("memory_" + property + ": " + memoryUsage[property] + "\n");
+                    }
+                    stream.write("END\n\n");
+                    break;
+
+                case "quit":
+                    stream.end();
+                    break;
+
+                default:
+                    stream.write("Invalid command\n");
+                    break;
+            };
+        });
+
+    });
+    this.debugServer.listen(config.debugServerPort || config.port + 101);
+}
+
 
 
 function C2DMConnection(config) {
@@ -436,7 +526,19 @@ fs.stat('quota.lock', function(err, stats) {
         process.exit(1);
     }
 
-    var connection = new C2DMConnection(config);
-    var receiver = new C2DMReceiver(config, connection);
+    var c2DMConnection = null;
+    var gcmConnection = null;
+    if (config.username && config.password && config.source) {
+        c2DMConnection = new C2DMConnection(config);
+    }
+    if (config.gcmAPIKey) {
+        gcmConnection = new GCMConnection(config);
+    }
+
+    if (!c2DMConnection && !gcmConnection) {
+        log("Can't start, neither C2DM or GCM defined");
+        process.exit(1);
+    }
+    var receiver = new C2DMReceiver(config, c2DMConnection, gcmConnection);
 });
 
