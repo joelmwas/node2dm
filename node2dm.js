@@ -92,7 +92,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
             return;
         }
         isGCMPayload ? gcmConnection.notifyDevice(c2dmMessage) :
-            connection.notifyDevice(c2dmMessage);
+            c2dmConnection.notifyDevice(c2dmMessage);
     });
     this.server.bind(config.port || 8120);
     log("server is up");
