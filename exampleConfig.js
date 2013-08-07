@@ -1,9 +1,15 @@
 /*
  * Required variables
- *
+ * For C2DM:
  * username (Google account ID)
  * password (Google account password)
  * source (Google source, like 'com-your-app')
+ *
+ * For GCM:
+ *
+ * gcmAPIKey
+ *
+ *
  * port (port to bind to)
  * address (address to bind to)
  * statsD {host: (statsD host), port: (statsD port), prefix/suffix: (stat name prefix/suffix), samplingRate: sampling rate)
@@ -14,7 +20,7 @@
  * (if specified, will be used to send a POST back to a service in order to handle bad tokens)
  *
  */
- 
+
   var config = {}
   config.port =  8120;
   config.address= "127.0.0.1";
