@@ -532,7 +532,7 @@ fs.stat('quota.lock', function(err, stats) {
 
     var c2DMConnection = null;
     var gcmConnection = null;
-    if (config.username && config.password && config.source) {
+    if (config.username && config.password) {
         c2DMConnection = new C2DMConnection(config);
     }
     if (config.gcmAPIKey) {
