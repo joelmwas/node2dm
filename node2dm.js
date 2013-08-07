@@ -126,7 +126,7 @@ function GCMConnection(config) {
         writeStat("gcm.sent");
         totalMessages++;
         self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
-            if (err) {
+            if (err || result["success"] === 0) {
                 writeStat("gcm.error");
                 totalErrors++;
                 log(err);
