@@ -13,8 +13,10 @@
  * port (port to bind to)
  * address (address to bind to)
  * statsD {host: (statsD host), port: (statsD port), prefix/suffix: (stat name prefix/suffix), samplingRate: sampling rate)
- * debugServerPort (port to bind for stats / debug server)
- * debugServeraddress (address to bind for stats / debug server)
+ * debugServerPort (port to bind for c2dm stats / debug server)
+ * debugServeraddress (address to bind for c2dm  stats / debug server)
+ * gcmDebugServerPort (port to bind for gcm stats / debug server)
+ * gcmServerAddress (address to bind for gcm  stats / debug server)
  * serverCallbackHost / serverCallbackPort / serverCallbackPath / serverCallbackSharedSecret /
  * serverCallbackProtocol
  * (if specified, will be used to send a POST back to a service in order to handle bad tokens)

@@ -171,7 +171,7 @@ function GCMConnection(config) {
         });
 
     });
-    this.debugServer.listen(config.debugServerPort || config.port + 101);
+    this.debugServer.listen(config.debugServerPort || config.port + 200);
 }
 
 
