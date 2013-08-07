@@ -1,7 +1,7 @@
 node2dm
 ======
 
-A node.js server for sending push notifications to Google's C2DM push notification server.  Written by [Instagram](http://instagram.com/) to support our Android application, and inspired by [statsd](http://github.com/etsy/statsd)'s protocol.
+A node.js server for sending push notifications to Google's C2DM (deprecated) and GCM push notification server.  Written by [Instagram](http://instagram.com/) to support our Android application, and inspired by [statsd](http://github.com/etsy/statsd)'s protocol.
 
 Setting up
 -------
@@ -33,10 +33,12 @@ As you can see from the example, the datagram looks as follows:
 
 We chose UDP because we wanted to minimize latency between our application servers and the node2dm service, and don't have hard delivery requirements for push notifications.
 
+If you want to push to GCM, prefix your device_token with "g|".
+
 Rate limits / errors
 ------
 
-node2dm handles a variety of errors that may be passed back from the C2DM service:
+For C2DM, node2dm handles a variety of errors that may be passed back from the C2DM service:
 
   - *401*: Will force a re-authentication with the C2DM service
   * *503*: Will back off, respecting the Retry-After header
@@ -53,7 +55,7 @@ node2dm supports a simple webhook-like callback on a bad token error from Google
     device_token (the offending device token)
 	message_body (the body of the message that was being attempted; can be useful if you need to match something back up on your end)
 	shared_secret (the serverCallbackSharedSecret, can match up on your end to make sure it's the right server sending you a ping)
-	
+
 
 
 
