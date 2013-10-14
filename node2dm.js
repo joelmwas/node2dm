@@ -11,6 +11,21 @@ var dgram = require('dgram')
   , gcm = require('node-gcm')
   , net = require('net')
 
+var pushType = {
+    MPNS: 0,
+    GCM: 1,
+    C2DM: 2
+};
+
+if (config.mpns) {
+    try {
+        var mpns = require('mpns');
+    } catch (e) {
+        config.mpns = false;
+        log('mpns module is required for MPNS support.');
+    }
+}
+
 if (config.syslog) {
     try {
         var syslog = require('node-syslog');
@@ -57,42 +72,100 @@ function writeStat(stat) {
 
 function C2DMReceiver(config, c2dmConnection, gcmConnection) {
 
-    this.pattern = /^([^:]+):([^:]+):(.*)$/;
     this.GCMTokenPrefix = /^g\|(.*)$/;
+    this.WPTokenPrefix = /^w\|(.*)$/;
 
     var self = this;
 
     this.server = dgram.createSocket('udp4', function (msg, rinfo) {
-        var msgParts = self.pattern.exec(msg.toString());
-        if (!msgParts) {
-            log("Invalid message");
-            return;
-        };
-        var token = msgParts[1];
-        var tokenParts = self.GCMTokenPrefix.exec(token);
-        var isGCMPayload = false;
-        if (tokenParts) {
-            isGCMPayload = true;
-            token = tokenParts[1];
-        }
-        var collapseKey = msgParts[2];
-        var notification = msgParts[3];
+        var type = pushType.C2DM;
+        msg = msg.toString(); // msg is a Buffer by default
 
-        var c2dmMessage = {}
-        c2dmMessage.deviceToken = token;
-        c2dmMessage.collapseKey = collapseKey;
-        c2dmMessage.notification = notification;
-        if (isGCMPayload && !gcmConnection) {
-            writeStat("gcm.no_gcm_server");
-            log("Can't send GCM message, no connection");
-            return;
-        } else if (!isGCMPayload && !c2dmConnection) {
-            writeStat("gcm.no_c2dm_server");
-            log("Can't send c2dm message, no connection");
-            return;
+        if (self.WPTokenPrefix.test(msg)) {
+            type = pushType.MPNS;
+            msg = msg.slice(2);
+        } else if (self.GCMTokenPrefix.test(msg)) {
+            type = pushType.GCM;
+            msg = msg.slice(2);
         }
-        isGCMPayload ? gcmConnection.notifyDevice(c2dmMessage) :
-            c2dmConnection.notifyDevice(c2dmMessage);
+
+        switch (type) {
+            case pushType.MPNS:
+                // Message format: (entities url encoded)
+                // pushURI:text1:text2:param
+                var msgParts = msg.split(':').map(unescape);
+
+                if (!msgParts.length) {
+                    log("Invalid message");
+                    return;
+                }
+
+
+                var pushURI = msgParts[0];
+                var text1 = msgParts[1];
+                var text2 = msgParts[2];
+                var param = msgParts[3];
+                var callback = function (err, response) {
+                    if (err) {
+                        writeStat("mpns.error");
+                        log(JSON.stringify(err));
+                    }
+                };
+
+                // Note that `param` needs to be a valid path, or the
+                // notification will silently fail.
+                mpns.sendToast(
+                    pushURI,
+                    text1,
+                    text2,
+                    param,
+                    callback
+                );
+
+                break;
+            case pushType.GCM:
+            case pushType.C2DM:
+                // Message format:
+                // token:collapseKey:notification
+                var pattern = /^([^:]+):([^:]+):(.*)$/;
+                var msgParts = pattern.exec(msg);
+                if (!msgParts) {
+                    log("Invalid message");
+                    return;
+                };
+
+                var c2dmMessage = {
+                    deviceToken: msgParts[1],
+                    collapseKey: msgParts[2],
+                    notification: msgParts[3]
+                };
+
+                switch (type) {
+                    case pushType.GCM:
+                        if (!gcmConnection) {
+                            writeStat("gcm.no_gcm_server");
+                            log("Can't send GCM message, no connection");
+                            return;
+                        }
+                        gcmConnection.notifyDevice(c2dmMessage);
+                        break;
+                    case pushType.C2DM:
+                    default:
+                        if (!c2dmConnection) {
+                            writeStat("gcm.no_c2dm_server");
+                            log("Can't send c2dm message, no connection");
+                            return;
+                        }
+                        c2dmConnection.notifyDevice(c2dmMessage);
+                        break;
+                }
+
+                break;
+            default:
+                log("Invalid push type.");
+                break;
+        }
+
     });
     this.server.bind(config.port || 8120);
     log("server is up");
@@ -539,10 +612,6 @@ fs.stat('quota.lock', function(err, stats) {
         gcmConnection = new GCMConnection(config);
     }
 
-    if (!c2DMConnection && !gcmConnection) {
-        log("Can't start, neither C2DM or GCM defined");
-        process.exit(1);
-    }
     var receiver = new C2DMReceiver(config, c2DMConnection, gcmConnection);
 });
 
