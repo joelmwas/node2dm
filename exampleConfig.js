@@ -27,6 +27,7 @@
   config.port =  8120;
   config.address= "127.0.0.1";
   config.syslog = false;
+  config.mpns = false;
   config.statsD = {host: "127.0.0.1", port: 8125, prefix: "stats.node2dm.", suffix: "", samplingRate: 0.1};
   module.exports = config;
 
