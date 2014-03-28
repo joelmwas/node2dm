@@ -4,6 +4,7 @@ var dgram = require('dgram')
   , util = require('util')
   , http = require('http')
   , https = require('https')
+  , request = require('request')
   , querystring = require('querystring')
   , emitter = require('events').EventEmitter
   , config = require(userConfig())
@@ -109,9 +110,11 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
 
 
                 var pushURI = msgParts[0];
-                var text1 = msgParts[1];
-                var text2 = msgParts[2];
-                var param = msgParts[3];
+                var options = {
+                    text1: msgParts[1],
+                    text2: msgParts[2],
+                    param: msgParts[3],
+                }
                 var callback = function (err, response) {
                     if (err) {
                         writeStat("mpns.error");
@@ -119,13 +122,15 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
                     }
                 };
 
+                if (config.httpProxy) {
+                    options['proxy'] = config.httpProxy;
+                }
+
                 // Note that `param` needs to be a valid path, or the
                 // notification will silently fail.
                 mpns.sendToast(
                     pushURI,
-                    text1,
-                    text2,
-                    param,
+                    options,
                     callback
                 );
 
@@ -194,7 +199,7 @@ function GCMConnection(config, apiKey, alternateHost, alternateEndpoint) {
         return null;
     }
 
-    this.sender = new gcm.Sender(apiKey, alternateHost, alternateEndpoint);
+    this.sender = new gcm.Sender(config, apiKey, alternateEndpoint);
     var self = this;
 
     /*
@@ -269,19 +274,8 @@ function C2DMConnection(config) {
 
     var self = this;
 
-    this.c2dmServerOptions = {
-        "host": "android.apis.google.com",
-        "path": "/c2dm/send",
-        "method": "POST"
-    }
-
-    this.loginOptions = {
-        "host": "www.google.com",
-        "path": "/accounts/ClientLogin",
-        "method": "POST",
-        "headers": {'Content-Type': 'application/x-www-form-urlencoded'}
-
-    }
+    this.c2dmServer = "https://android.apis.google.com/c2dm/send";
+    this.loginServer = "https://www.google.com/accounts/ClientLogin";
 
     this.currentAuthorizationToken = null;
     this.authFails = 0;
@@ -430,21 +424,25 @@ function C2DMConnection(config) {
             "data.data": message.notification,
         }
 
-        var stringBody = querystring.stringify(c2dmPostBody);
         var requestOptions =  {
-            'host': self.c2dmServerOptions.host,
-            'path': self.c2dmServerOptions.path,
-            'agent': false,
-            'method': 'POST',
-            'headers': {
-                'Content-Length': stringBody.length,
-                'Content-Type': 'application/x-www-form-urlencoded'
+            url: self.c2dmServer,
+            form: c2dmPostBody,
+            encoding: 'utf-8',
+            headers: {
+                'Authorization': 'GoogleLogin auth=' + self.currentAuthorizationToken
             }
         };
-        requestOptions['headers']['Authorization'] = 'GoogleLogin auth=' + self.currentAuthorizationToken;
 
-        var postRequest = https.request(requestOptions, function(response) {
-            if (response.statusCode == 401) {
+        if (config.httpProxy) {
+            requestOptions['proxy'] = config.httpProxy;
+        }
+
+        request.post(requestOptions, function(error, response, body) {
+            if (error) {
+                totalErrors++;
+                log(error);
+                writeStat("failure");
+            } else if (response.statusCode == 401) {
                 // we need to reauthenticate
                 self.currentAuthorizationToken = null;
                 // requeue message
@@ -458,29 +456,14 @@ function C2DMConnection(config) {
                     self.emit('retryAfterExpired');
                 }, retryAfter * 1000);
             } else if (response.statusCode == 200) {
-                response.setEncoding('utf-8');
-                var buffer = '';
-                response.on('data', function(chunk) {
-                    buffer += chunk;
-                });
-                response.on('end', function(end) {
-                    writeStat("success");
-                    var returnedID = buffer.match(/id=/);
-                    if (!returnedID) {
-                        self.onError(message, buffer);
-                    }
-                });
+                writeStat("success");
+                var returnedID = body.match(/id=/);
+                if (!returnedID) {
+                    self.onError(message, body);
+                }
             }
         });
 
-        postRequest.on('error', function(error) {
-            totalErrors++;
-            log(error);
-            writeStat("failure");
-        });
-
-        postRequest.write(stringBody);
-        postRequest.end();
     }
 
     this.submitMessage = function(message) {
@@ -516,24 +499,31 @@ function C2DMConnection(config) {
             "service": "ac2dm",
             "source": config.source
         }
-        var loginBodyString = querystring.stringify(loginBody);
-        this.loginOptions['headers']['Content-Length'] = loginBodyString.length;
-        var loginReq = https.request(self.loginOptions, function(res) {
-            res.setEncoding('utf-8');
-            var buffer = '';
-            res.on('data', function(data) {
-                buffer += data;
-            });
-            res.on('end', function() {
-                var token = buffer.match(/Auth=(.+)[$|\n]/);
+
+        var login_options = {
+            url: self.loginServer,
+            form: loginBody,
+            encoding: 'utf-8'
+        }
+
+        if (config.httpProxy) {
+            login_options['proxy'] = config.httpProxy;
+        }
+
+        request.post(login_options, function(error, response, body) {
+            if (error) {
+                log(e);
+                authInProgress = false;
+            } else {
+                var token = body.match(/Auth=(.+)[$|\n]/);
                 if (token) {
                     self.currentAuthorizationToken = token[1];
                     authTokenTime = Math.round(new Date().getTime() / 1000);
                     self.authFails = 0;
                     self.emit('loginComplete');
                 } else {
-                    log("Auth fail; body: " + buffer);
-                    if (buffer.match(/CaptchaToken/)) {
+                    log("Auth fail; body: " + body);
+                    if (body.match(/CaptchaToken/)) {
                         log("Must auth with captcha; exiting");
                         process.exit(1);
                     }
@@ -541,14 +531,8 @@ function C2DMConnection(config) {
                 }
                 log('auth token: ' + self.currentAuthorizationToken);
                 authInProgress = false;
-            });
+            }
         });
-        loginReq.on('error', function(e) {
-            log(e);
-            authInProgress = false;
-        });
-        loginReq.write(loginBodyString);
-        loginReq.end();
     };
 
     this.debugServer = net.createServer(function(stream) {
@@ -631,8 +615,7 @@ fs.stat('quota.lock', function(err, stats) {
         nokiaConnection = new GCMConnection(
             config,
             config.nokiaAPIKey,
-            "nnapi.ovi.com",
-            "/nnapi/2.0/send");
+            "https://nnapi.ovi.com/nnapi/2.0/send");
     }
 
     var receiver = new C2DMReceiver(
