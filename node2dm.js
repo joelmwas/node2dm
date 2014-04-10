@@ -204,10 +204,21 @@ function GCMConnection(config) {
         writeStat("gcm.sent");
         totalMessages++;
         self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
-            if (err || result["success"] === 0) {
+            if (err) {
                 writeStat("gcm.error");
                 totalErrors++;
                 log(err);
+            } else if (result["failures"] > 0) {
+                for (var r in result["results"]) {
+                    if ("error" in r) {
+                        log(r["error"]);
+                        if (r["error"] == "NotRegistered") {
+                            writeStat("gcm.not_registered");
+                        } else if (r["error"] == "InvalidRegistration") {
+                            writeStat("gcm.invalid_registration");
+                        }
+                    }
+                }
             }
         });
     }
