@@ -19,6 +19,10 @@ var pushType = {
     NOKIA: 3
 };
 
+if (config.maxSockets) {
+    http.Agent.defaultMaxSockets = config.maxSockets;
+}
+
 if (config.mpns) {
     try {
         var mpns = require('mpns');
@@ -373,6 +377,7 @@ function C2DMConnection(config) {
             var requestOptions = {
                 url: protocol + '://' + config.serverCallbackHost + ':' + port + config.serverCallbackPath,
                 form: postBody,
+                timeout: config.timeout,
             }
 
             if (config.serverCallbackProxy) {
@@ -465,7 +470,8 @@ function C2DMConnection(config) {
                 // the Host header to get the right vhost
                 'Host': 'android.apis.google.com',
                 'Authorization': 'GoogleLogin auth=' + self.currentAuthorizationToken
-            }
+            },
+            timeout: config.timeout,
         };
 
         if (config.httpProxy) {
@@ -538,7 +544,8 @@ function C2DMConnection(config) {
         var login_options = {
             url: self.loginServer,
             form: loginBody,
-            encoding: 'utf-8'
+            encoding: 'utf-8',
+            timeout: config.timeout,
         }
 
         if (config.httpProxy) {
@@ -547,7 +554,7 @@ function C2DMConnection(config) {
 
         request.post(login_options, function(error, response, body) {
             if (error) {
-                log(e);
+                log(error);
                 authInProgress = false;
             } else {
                 var token = body.match(/Auth=(.+)[$|\n]/);
