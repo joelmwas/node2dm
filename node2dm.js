@@ -274,7 +274,7 @@ function C2DMConnection(config) {
 
     var self = this;
 
-    this.c2dmServer = "https://android.apis.google.com/c2dm/send";
+    this.c2dmServer = "https://apis.google.com/c2dm/send";
     this.loginServer = "https://www.google.com/accounts/ClientLogin";
 
     this.currentAuthorizationToken = null;
@@ -429,6 +429,10 @@ function C2DMConnection(config) {
             form: c2dmPostBody,
             encoding: 'utf-8',
             headers: {
+                // Google send a bad SSL cert which doesn't cover android.apis.google.com
+                // Use apis.google.com in the URL to validate the cert, and then override
+                // the Host header to get the right vhost
+                'Host': 'android.apis.google.com',
                 'Authorization': 'GoogleLogin auth=' + self.currentAuthorizationToken
             }
         };
