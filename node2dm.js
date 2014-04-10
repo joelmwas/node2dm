@@ -14,7 +14,8 @@ var dgram = require('dgram')
 var pushType = {
     MPNS: 0,
     GCM: 1,
-    C2DM: 2
+    C2DM: 2,
+    NOKIA: 3
 };
 
 if (config.mpns) {
@@ -70,10 +71,13 @@ function writeStat(stat) {
     }
 }
 
-function C2DMReceiver(config, c2dmConnection, gcmConnection) {
+var gUpperPortsUsed = 0;
+
+function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
 
     this.GCMTokenPrefix = /^g\|(.*)$/;
     this.WPTokenPrefix = /^w\|(.*)$/;
+    this.NokiaTokenPrefix = /^n\|(.*)$/;
 
     var self = this;
 
@@ -83,6 +87,9 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
 
         if (self.WPTokenPrefix.test(msg)) {
             type = pushType.MPNS;
+            msg = msg.slice(2);
+        } else if (self.NokiaTokenPrefix.test(msg)) {
+            type = pushType.NOKIA;
             msg = msg.slice(2);
         } else if (self.GCMTokenPrefix.test(msg)) {
             type = pushType.GCM;
@@ -125,6 +132,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
                 break;
             case pushType.GCM:
             case pushType.C2DM:
+            case pushType.NOKIA:
                 // Message format:
                 // token:collapseKey:notification
                 var pattern = /^([^:]+):([^:]+):(.*)$/;
@@ -149,6 +157,14 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
                         }
                         gcmConnection.notifyDevice(c2dmMessage);
                         break;
+                    case pushType.NOKIA:
+                        if (!nokiaConnection) {
+                            writeStat("gcm.no_nokia_server");
+                            log("Can't send nokia message, no connection");
+                            return;
+                        }
+                        nokiaConnection.notifyDevice(c2dmMessage);
+                        break;
                     case pushType.C2DM:
                     default:
                         if (!c2dmConnection) {
@@ -172,13 +188,13 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
 }
 
 
-function GCMConnection(config) {
+function GCMConnection(config, apiKey, alternateHost, alternateEndpoint) {
 
-    if (!config.gcmAPIKey) {
+    if (!apiKey) {
         return null;
     }
 
-    this.sender = new gcm.Sender(config.gcmAPIKey);
+    this.sender = new gcm.Sender(apiKey, alternateHost, alternateEndpoint);
     var self = this;
 
     /*
@@ -202,7 +218,7 @@ function GCMConnection(config) {
             if (err || result["success"] === 0) {
                 writeStat("gcm.error");
                 totalErrors++;
-                log(err);
+                log("error received", err, result);
             }
         });
     }
@@ -244,7 +260,7 @@ function GCMConnection(config) {
         });
 
     });
-    this.debugServer.listen(config.debugServerPort || config.port + 200);
+    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed++ || config.port + 200 + gUpperPortsUsed++);
 }
 
 
@@ -589,7 +605,7 @@ function C2DMConnection(config) {
         });
 
     });
-    this.debugServer.listen(config.debugServerPort || config.port + 100);
+    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed++ || config.port + 100 + gUpperPortsUsed++);
 }
 
 util.inherits(C2DMConnection, emitter);
@@ -609,9 +625,20 @@ fs.stat('quota.lock', function(err, stats) {
         c2DMConnection = new C2DMConnection(config);
     }
     if (config.gcmAPIKey) {
-        gcmConnection = new GCMConnection(config);
+        gcmConnection = new GCMConnection(config, config.gcmAPIKey);
+    }
+    if (config.nokiaAPIKey) {
+        nokiaConnection = new GCMConnection(
+            config,
+            config.nokiaAPIKey,
+            "nnapi.ovi.com",
+            "/nnapi/2.0/send");
     }
 
-    var receiver = new C2DMReceiver(config, c2DMConnection, gcmConnection);
+    var receiver = new C2DMReceiver(
+        config,
+        c2DMConnection,
+        gcmConnection,
+        nokiaConnection);
 });
 
