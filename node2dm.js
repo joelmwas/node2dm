@@ -216,6 +216,8 @@ function GCMConnection(config) {
                             writeStat("gcm.not_registered");
                         } else if (r["error"] == "InvalidRegistration") {
                             writeStat("gcm.invalid_registration");
+                        } else {
+                            writeStat("gcm.unknown_google_error");
                         }
                     }
                 }
@@ -330,27 +332,31 @@ function C2DMConnection(config) {
     if (config.serverCallbackHost && config.serverCallbackPath) {
         this.on('badregistration', function(message) {
             // default to https
-            var baseClass = (config.serverCallbackProtocol == 'http' ? http : https);
+            var protocol = (config.serverCallbackProtocol == 'http' ? 'http' : 'https');
             var port = (config.serverCallbackPort || (config.serverCallbackProtocol == 'http' ? 80 : 443));
             var postBody = {
                 device_token: message.deviceToken,
                 message_body: message.notification,
                 shared_secret: config.serverCallbackSharedSecret
             }
-            var postBodyString = querystring.stringify(postBody);
-            var webhookOptions = {
-                host: config.serverCallbackHost,
-                port: port,
-                path: config.serverCallbackPath,
-                method: "POST",
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Content-Length': postBodyString.length
-                }
+
+            var requestOptions = {
+                url: protocol + '://' + config.serverCallbackHost + ':' + port + config.serverCallbackPath,
+                form: postBody,
             }
-            var webhookReq = baseClass.request(webhookOptions, function(res) {});
-            webhookReq.write(postBodyString);
-            webhookReq.end();
+
+            if (config.serverCallbackProxy) {
+                requestOptions['proxy'] = config.serverCallbackProxy;
+            }
+
+            request.post(requestOptions, function(error, response, body) {
+                if (error) {
+                    writeStat('callback.error');
+                    log('Callback error: ' + error);
+                } else {
+                    writeStat('callback.success');
+                }
+            });
         });
     }
 
