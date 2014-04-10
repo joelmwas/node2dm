@@ -109,9 +109,13 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
                     param: msgParts[3],
                 }
                 var callback = function (err, response) {
-                    if (err) {
+                    if (err && err.shouldDeleteChannel === true) {
+                        writeStat("mpns.not_registered");
+                    } else if (err) {
                         writeStat("mpns.error");
                         log(JSON.stringify(err));
+                    } else {
+                        writeStat("mpns.success");
                     }
                 };
 
@@ -121,6 +125,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection) {
 
                 // Note that `param` needs to be a valid path, or the
                 // notification will silently fail.
+                writeStat("mpns.sent");
                 mpns.sendToast(
                     pushURI,
                     options,
@@ -204,24 +209,33 @@ function GCMConnection(config) {
         writeStat("gcm.sent");
         totalMessages++;
         self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
-            if (err) {
-                writeStat("gcm.error");
-                totalErrors++;
-                log(err);
-            } else if (result["failures"] > 0) {
-                for (var r in result["results"]) {
-                    if ("error" in r) {
-                        log(r["error"]);
-                        if (r["error"] == "NotRegistered") {
+            if (!err && result && result.failure === 0) {
+                writeStat("gcm.success");
+                return;
+            }
+
+            totalErrors++;
+            if (result && result.failure > 0) {
+                for (i = 0; i < result.results.length; i++) {
+                    r = result.results[i];
+                    if (r.error) {
+                        if (r.error == "NotRegistered") {
                             writeStat("gcm.not_registered");
-                        } else if (r["error"] == "InvalidRegistration") {
+                            return;
+                        } else if (r.error == "InvalidRegistration") {
                             writeStat("gcm.invalid_registration");
+                            return;
                         } else {
+                            log(r.error);
                             writeStat("gcm.unknown_google_error");
+                            return;
                         }
                     }
                 }
             }
+
+            writeStat("gcm.error");
+            log(err);
         });
     }
 
