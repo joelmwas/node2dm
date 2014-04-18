@@ -112,6 +112,11 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
                     return;
                 }
 
+                if (!mpns) {
+                    writeStat("mpns.no_server");
+                    log("Can't send MPNS message, no connection");
+                    return;
+                }
 
                 var pushURI = msgParts[0];
                 var options = {
@@ -165,7 +170,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
                 switch (type) {
                     case pushType.GCM:
                         if (!gcmConnection) {
-                            writeStat("gcm.no_gcm_server");
+                            writeStat("gcm.no_server");
                             log("Can't send GCM message, no connection");
                             return;
                         }
@@ -173,7 +178,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
                         break;
                     case pushType.NOKIA:
                         if (!nokiaConnection) {
-                            writeStat("gcm.no_nokia_server");
+                            writeStat("nokia.no_server");
                             log("Can't send nokia message, no connection");
                             return;
                         }
@@ -182,7 +187,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
                     case pushType.C2DM:
                     default:
                         if (!c2dmConnection) {
-                            writeStat("gcm.no_c2dm_server");
+                            writeStat("no_c2dm_server");
                             log("Can't send c2dm message, no connection");
                             return;
                         }
@@ -202,12 +207,13 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
 }
 
 
-function GCMConnection(config, apiKey, alternateHost, alternateEndpoint) {
+function GCMConnection(config, apiKey, stat_key, alternateHost, alternateEndpoint) {
 
     if (!apiKey) {
         return null;
     }
 
+    this.stat_key = stat_key;
     this.sender = new gcm.Sender(config, apiKey, alternateEndpoint);
     var self = this;
 
@@ -226,11 +232,11 @@ function GCMConnection(config, apiKey, alternateHost, alternateEndpoint) {
             }
         });
 
-        writeStat("gcm.sent");
+        writeStat(self.stat_key + "sent");
         totalMessages++;
         self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
             if (!err && result && result.failure === 0) {
-                writeStat("gcm.success");
+                writeStat(self.stat_key + "success");
                 return;
             }
 
@@ -240,21 +246,21 @@ function GCMConnection(config, apiKey, alternateHost, alternateEndpoint) {
                     r = result.results[i];
                     if (r.error) {
                         if (r.error == "NotRegistered") {
-                            writeStat("gcm.not_registered");
+                            writeStat(self.stat_key + "not_registered");
                             return;
                         } else if (r.error == "InvalidRegistration") {
-                            writeStat("gcm.invalid_registration");
+                            writeStat(self.stat_key + "invalid_registration");
                             return;
                         } else {
                             log(r.error);
-                            writeStat("gcm.unknown_google_error");
+                            writeStat(self.stat_key + "unknown_server_error");
                             return;
                         }
                     }
                 }
             }
 
-            writeStat("gcm.error");
+            writeStat(self.stat_key + "error");
             log(err);
         });
     }
@@ -296,7 +302,8 @@ function GCMConnection(config, apiKey, alternateHost, alternateEndpoint) {
         });
 
     });
-    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed++ || config.port + 200 + gUpperPortsUsed++);
+    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed || config.port + 100 * gUpperPortsUsed);
+    gUpperPortsUsed++;
 }
 
 
@@ -631,7 +638,8 @@ function C2DMConnection(config) {
         });
 
     });
-    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed++ || config.port + 100 + gUpperPortsUsed++);
+    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed || config.port + 100 * gUpperPortsUsed);
+    gUpperPortsUsed++;
 }
 
 util.inherits(C2DMConnection, emitter);
@@ -652,12 +660,13 @@ fs.stat('quota.lock', function(err, stats) {
         c2DMConnection = new C2DMConnection(config);
     }
     if (config.gcmAPIKey) {
-        gcmConnection = new GCMConnection(config, config.gcmAPIKey);
+        gcmConnection = new GCMConnection(config, config.gcmAPIKey, 'gcm.');
     }
     if (config.nokiaAPIKey) {
         nokiaConnection = new GCMConnection(
             config,
             config.nokiaAPIKey,
+            'nokia.',
             "https://nnapi.ovi.com/nnapi/2.0/send");
     }
 
