@@ -207,13 +207,13 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
 }
 
 
-function GCMConnection(config, apiKey, stat_key, alternateHost, alternateEndpoint) {
+function GCMConnection(config, apiKey, statKey, alternateEndpoint) {
 
     if (!apiKey) {
         return null;
     }
 
-    this.stat_key = stat_key;
+    this.statKey = statKey;
     this.sender = new gcm.Sender(config, apiKey, alternateEndpoint);
     var self = this;
 
@@ -232,11 +232,11 @@ function GCMConnection(config, apiKey, stat_key, alternateHost, alternateEndpoin
             }
         });
 
-        writeStat(self.stat_key + "sent");
+        writeStat(self.statKey + "sent");
         totalMessages++;
         self.sender.sendNoRetry(message, [pushData.deviceToken], function(err, result) {
             if (!err && result && result.failure === 0) {
-                writeStat(self.stat_key + "success");
+                writeStat(self.statKey + "success");
                 return;
             }
 
@@ -246,21 +246,21 @@ function GCMConnection(config, apiKey, stat_key, alternateHost, alternateEndpoin
                     r = result.results[i];
                     if (r.error) {
                         if (r.error == "NotRegistered") {
-                            writeStat(self.stat_key + "not_registered");
+                            writeStat(self.statKey + "not_registered");
                             return;
                         } else if (r.error == "InvalidRegistration") {
-                            writeStat(self.stat_key + "invalid_registration");
+                            writeStat(self.statKey + "invalid_registration");
                             return;
                         } else {
                             log(r.error);
-                            writeStat(self.stat_key + "unknown_server_error");
+                            writeStat(self.statKey + "unknown_server_error");
                             return;
                         }
                     }
                 }
             }
 
-            writeStat(self.stat_key + "error");
+            writeStat(self.statKey + "error");
             log(err);
         });
     }
