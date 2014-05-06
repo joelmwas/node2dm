@@ -16,7 +16,8 @@ var pushType = {
     MPNS: 0,
     GCM: 1,
     C2DM: 2,
-    NOKIA: 3
+    NOKIA: 3,
+    ADM: 4
 };
 
 if (config.maxSockets) {
@@ -29,6 +30,15 @@ if (config.mpns) {
     } catch (e) {
         config.mpns = false;
         log('mpns module is required for MPNS support.');
+    }
+}
+
+if (config.admClientID) {
+    try {
+      var adm = require('node-adm');
+    } catch (e) {
+        config.admClientID = null;
+        log('node-adm module required for ADM support');
     }
 }
 
@@ -78,11 +88,12 @@ function writeStat(stat) {
 
 var gUpperPortsUsed = 0;
 
-function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
+function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection, admConnection) {
 
     this.GCMTokenPrefix = /^g\|(.*)$/;
     this.WPTokenPrefix = /^w\|(.*)$/;
     this.NokiaTokenPrefix = /^n\|(.*)$/;
+    this.ADMTokenPrefix = /^a\|(.*)$/;
 
     var self = this;
 
@@ -98,6 +109,9 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
             msg = msg.slice(2);
         } else if (self.GCMTokenPrefix.test(msg)) {
             type = pushType.GCM;
+            msg = msg.slice(2);
+        } else if (self.ADMTokenPrefix.test(msg)) {
+            type = pushType.ADM;
             msg = msg.slice(2);
         }
 
@@ -152,6 +166,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
             case pushType.GCM:
             case pushType.C2DM:
             case pushType.NOKIA:
+            case pushType.ADM:
                 // Message format:
                 // token:collapseKey:notification
                 var pattern = /^([^:]+):([^:]+):(.*)$/;
@@ -184,6 +199,14 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
                         }
                         nokiaConnection.notifyDevice(c2dmMessage);
                         break;
+                    case pushType.ADM:
+                        if (!admConnection) {
+                            writeStat("adm.no_server");
+                            log("can't send ADM message, no connection");
+                            return;
+                        }
+                        admConnection.notifyDevice(c2dmMessage);
+                        break;
                     case pushType.C2DM:
                     default:
                         if (!c2dmConnection) {
@@ -204,6 +227,86 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection) {
     });
     this.server.bind(config.port || 8120);
     log("server is up");
+}
+
+
+function ADMConnection(options, clientID, clientSecret) {
+
+    if (!clientID || !clientSecret) {
+        return null;
+    }
+
+    this.statKey = 'adm.';
+    this.sender = new adm.Sender(options, clientID, clientSecret);
+    var self = this;
+
+    /*
+     * Stats
+     */
+    var totalMessages = 0;
+    var totalErrors = 0;
+    var startupTime = Math.round(Date.now() / 1000);
+
+    this.notifyDevice = function(pushData) {
+        var message = {
+            consolidationKey: pushData.collapseKey,
+            data: {
+                data: pushData.notification
+            }
+        };
+
+        writeStat(self.statKey + "sent");
+        totalMessages++;
+        self.sender.send(message, pushData.deviceToken, function(err, result) {
+            if (!err && result && result.failure === 0) {
+                writeStat(self.statKey + "success");
+                return;
+            }
+
+            totalErrors++;
+            writeStat(self.statKey + "error");
+        });
+    }
+
+    this.debugServer = net.createServer(function(stream) {
+        stream.setEncoding('ascii');
+
+        stream.on('data', function(data) {
+            var commandLine = data.trim().split(" ");
+            var command = commandLine.shift();
+            switch (command) {
+                case "help":
+                    stream.write("Commands: stats\n");
+                    break;
+
+                case "stats":
+                    var now = Math.round(Date.now() / 1000);
+                    var elapsed = now - startupTime;
+
+                    stream.write("uptime: " + elapsed + " seconds\n");
+                    stream.write("messages_sent: " + totalMessages + "\n");
+                    stream.write("total_errors: " + totalErrors + "\n");
+
+                    var memoryUsage = process.memoryUsage();
+                    for (var property in memoryUsage) {
+                        stream.write("memory_" + property + ": " + memoryUsage[property] + "\n");
+                    }
+                    stream.write("END\n\n");
+                    break;
+
+                case "quit":
+                    stream.end();
+                    break;
+
+                default:
+                    stream.write("Invalid command\n");
+                    break;
+            };
+        });
+
+    });
+    this.debugServer.listen(config.debugServerPort + gUpperPortsUsed || config.port + 100 * gUpperPortsUsed);
+    gUpperPortsUsed++;
 }
 
 
@@ -656,6 +759,7 @@ fs.stat('quota.lock', function(err, stats) {
     var c2DMConnection = null;
     var gcmConnection = null;
     var nokiaConnection = null;
+    var admConnection = null;
     if (config.username && config.password) {
         c2DMConnection = new C2DMConnection(config);
     }
@@ -670,10 +774,15 @@ fs.stat('quota.lock', function(err, stats) {
             "https://nnapi.ovi.com/nnapi/2.0/send");
     }
 
+    if (config.admClientID) {
+        admConnection = new ADMConnection(config, config.admClientID, config.admClientSecret);
+    }
+
     var receiver = new C2DMReceiver(
         config,
         c2DMConnection,
         gcmConnection,
-        nokiaConnection);
+        nokiaConnection,
+        admConnection);
 });
 
