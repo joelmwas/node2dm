@@ -169,7 +169,7 @@ function C2DMReceiver(config, c2dmConnection, gcmConnection, nokiaConnection, ad
             case pushType.ADM:
                 // Message format:
                 // token:collapseKey:notification
-                var pattern = /^([^:]+):([^:]+):(.*)$/;
+                var pattern = /^([^:]+):([^:]+)?:(.*)$/;
                 var msgParts = pattern.exec(msg);
                 if (!msgParts) {
                     log("Invalid message");
